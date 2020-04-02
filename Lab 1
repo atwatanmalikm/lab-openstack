@@ -1,0 +1,85 @@
+SETUP VM AND NETWORKING
+
+1. Download and install Oracle Virtual Box
+2. Download Ubuntu Server 18.04
+3. Create Virtual Machine
+4. apt-get update, apt-get dist-upgrade, apt-get install vim make perl ifupdown gcc
+5. Network Config
+    auto lo         
+    iface lo inet loopback
+    
+    auto enp0s3                     *NAT
+    iface enp0s3 inet dhcp
+    
+    auto enp0s8                     *host only
+    iface enp0s8 inet static
+        address 10.0.0.11
+        netmask 255.255.255.0
+   
+    auto enp0s9                     *bridge ke sumber internet
+    iface enp0s9 inet manual
+    up ip link set dev $IFACE up
+    down ip link set dev $IFACE down
+    
+    save -->> esc > :wq > enter
+6. Clone VM 
+    compute
+    store1
+    store2
+7. Add Storage Sata
+   compute :    
+    disk2 3Gb
+    disk3 3Gb
+   store1 :    
+    disk2 3Gb
+    disk3 3Gb
+   store2 :    
+    disk2 3Gb
+    disk3 3Gb
+8. RAM 1024 MB 
+    compute
+    store1
+    store2
+9. Run all VM
+10.Controller : 
+   sudo vim /etc/hosts 
+    Edit -->> shift+i
+    10.0.0.11   controller
+    10.0.0.31   compute
+    10.0.0.51   store1
+    10.0.0.52   store2
+   
+   Compute :
+   Network Config Point 5 -->> 10.0.0.31
+   sudo vim /etc/hostname
+    compute
+   sudo vim /etc/hosts
+    127.0.1.1   compute
+    10.0.0.11   controller
+    10.0.0.31   compute
+    10.0.0.51   store1
+    10.0.0.52   store2
+   
+   Store1 :
+   Network Config Point 5 -->> 10.0.0.51
+   sudo vim /etc/hostname
+    store1
+   sudo vim /etc/hosts
+    127.0.1.1   store1
+    10.0.0.11   controller
+    10.0.0.31   compute
+    10.0.0.51   store1
+    10.0.0.52   store2
+   
+   Store2 :
+   Network Config Point 5 -->> 10.0.0.52
+   sudo vim /etc/hostname
+    store2
+   sudo vim /etc/hosts
+    127.0.1.1   store2
+    10.0.0.11   controller
+    10.0.0.31   compute
+    10.0.0.51   store1
+    10.0.0.52   store2
+11. PING all VM, from each VM.
+12. PING google.com

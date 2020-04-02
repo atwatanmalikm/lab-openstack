@@ -1,0 +1,134 @@
+Lab 3. Instal dan konfigurasi Keystone Identity Service (VM Controller)
+
+Rabbit Password : openstack
+KEYSTONE_DBPASS : keystoneDBPass
+ADMIN_PASS  : admin/adminPass
+Normal User : ibnmahar/ibnmahar
+
+Cek Error untuk troubleshooting: 
+-->> sudo tail -f /var/log/keystone/keystone-manage.log
+
+1. Database, User & Privileges
+-->> sudo mysql
+
+Membuat database keystone :
+create database keystone;
+-->> use keystone;
+Membuat database user :
+**GRANT ALL PRIVILEGES ON keystone.* TO 'USERNAME'@'localhost'\
+IDENTIFIED BY 'PASSWORD';
+
+GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost'\
+IDENTIFIED BY 'keystoneDBPass';
+
+GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%'\
+IDENTIFIED BY 'keystoneDBPass';
+
+Keluar dari mysql : 
+-->> exit
+
+2. Install packages :
+-->> sudo apt-get update
+-->> sudo apt-get install keystone apache2 libapache2-mod-wsgi -y
+
+3. Edit /etc/keystone/keystone.conf
+-->> sudo vim /etc/keystone/keystone.conf
+*Copy paste VIM : Copy : Drag Tekt || Paste : Scroll Click
+
+Search di VIM : 
+-->> /\[database]
+beri # pada "connection = sqlite:////var/lib/keystone/keystone.db"
+[database]
+connection = mysql+pymysql://keystone:keystoneDBPass@controller/keystone
+
+Search di VIM :
+-->>/\[token]
+Tambahkan di bawah "#provider = fernet"
+[token]
+provider = fernet
+
+Save : ":wq"
+
+4. Mengisi database tables:
+-->> sudo -s /bin/sh -c "keystone-manage db_sync" keystone
+Cek tables: 
+-->> sudo mysql
+-> use keystone;
+-> show tables;
+
+5.Inisialisasi Fernet key repositories :
+-->> sudo keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+-->> sudo keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+6. Bootstrap the Identity service: 
+-->> sudo keystone-manage bootstrap --bootstrap-password adminPass \
+-> --bootstrap-admin-url http://controller:5000/v3/ \
+-> --bootstrap-internal-url http://controller:5000/v3/ \
+-> --bootstrap-public-url http://controller:5000/v3/ \
+-> --bootstrap-region-id RegionOne
+
+7. Edit /etc/apache2/apache2.conf & configure ServerName :
+-->> sudo vim /etc/apache2/apache2.conf
+Tambahkan di bawah " #ServerRoot "/etc/apache2" "
+ServerName controller
+
+8. Restart dan enable apache service :
+-->> sudo systemctl restart apache2
+-->> sudo systemctl enable apache2
+Cek Status :
+-->> sudo systemctl status apache2
+
+9. Set Environment Variable (tanpa sudo)
+-->> export OS_USERNAME=admin
+-->> export OS_PASSWORD=adminPass
+-->> export OS_PASSWORD= (*jika tdk diminta memasukkan password di step 10-13 & 15-16)
+-->> export OS_PROJECT_NAME=admin
+-->> export OS_USER_DOMAIN_NAME=Default
+-->> export OS_PROJECT_DOMAIN_NAME=Default
+-->> export OS_AUTH_URL=http://controller:5000/v3
+-->> export OS_IDENTITY_API_VERSION=3
+
+10. Membuat Domain :
+*openstack domain create --description "DESKRIPSI DOMAIN" NAMADOMAIN
+-->> openstack domain create --description "Ibn Mahar Domain" IbnMahar
+
+11. Membuat service project:
+-->> openstack project create --domain default --description "Service Project" service
+
+12. Membuat unprivileged ibnmahar project dan ibnmahar user.
+-->> openstack project create --domain default --description "Ibn Mahar Project" IbnMahar
+-->> openstack user create --domain default --password-prompt ibnmahar
+-->> openstack role create myrole
+
+13. Menambahkan myrole ke ibnmahar project dan ibnmahar user
+-->> openstack role add --project IbnMahar --user ibnmahar myrole
+
+14. Verifikasi :
+-->> unset OS_AUTH_URL_OS_PASSWORD
+
+15. Sebagai admin user, request authentication token :
+-->> openstack --os-auth-url http://controller:5000/v3 \
+-> --os-project-domain-name Default --os-user-domain-name Default \
+-> --os-project-name admin --os-username admin token issue
+
+16. Sebagai ibnmahar user, request authentication token :
+-->> openstack --os-auth-url http://controller:5000/v3 \
+-> --os-project-domain-name Default --os-user-domain-name Default \
+-> --os-project-name IbnMahar --os-username ibnmahar token issue
+
+17. Membuat openstack client environment : (tidak terus memasukkan password)
+-->> vim admin-openrc
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=adminPass
+export OS_AUTH_URL=http://controller:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+
+18. Load admin-openrc untuk set environment variabel :
+-->> source admin-openrc
+
+19. Request authentication token :
+-->> openstack token issue

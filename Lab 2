@@ -1,0 +1,78 @@
+Lab 2. Instal dan Konfigurasi Pre-requisite Software
+
+Akses semua VM menggunakan PuTTY agar bisa copy paste. 
+(Paste PuTTY linux : scroll klik / shift+insert)
+-->> Samakan network VM dengan PC.  
+
+Step 1. Install Network Time Protocol pada semua VM.
+-->> sudo apt-get install chrony
+-->> allow 10.0.0.0/24 -> /etc/chrony/chrony.conf
+     sudo systemctl enable chrony (4x masukkan password)
+     sudo systemctl start chrony
+     sudo systemctl status chrony (check)
+Step 2. Install Ubuntu Cloud Packages (All VM)
+    sudo apt-get install software-properties-common
+    sudo add-apt-repository cloud-archive:rocky
+    sudo apt-get update && sudo apt-get dist-upgrade
+    sudo apt-get install python-openstackclient -y
+Step 3. Install Database MariaDB (VM controller)
+    sudo apt-get install mariadb-server python-pymysql
+    sudo vim /etc/mysql/mariadb.conf.d/99-openstack.cnf
+        [client]
+        default-character-set = utf8
+        
+        [mysqld]
+        bind-address = 10.0.0.11
+        default-storage-engine = innodb
+        innodb_file_per_table = on
+        max_connections = 4096
+        collation-server = utf8_general_ci
+        character-set-server = utf8
+        init-connect = 'SET NAMES utf8'
+
+        [mysql]
+        default-character-set = utf8
+
+    sudo systemctl enable mariadb
+    sudo systemctl restart mariadb
+    sudo systemctl status mariadb (check)
+Step 4. Install dan konfigurasi rabbitMQ (VM controller)
+    sudo apt-get install rabbitmq-server -y
+
+    Menambahkan User :
+    sudo rabbitmqctl add_user (username) (password)
+    -> sudo rabbitmqctl add_user openstack openstack 
+    
+    Mengizinkan configuration, write, read access :
+    sudo rabbitmqctl set_permissions (user) (conf) (write) (read)
+    -> sudo rabbitmqctl set_permissions openstack ".*" ".*" ".*"
+    sudo rabbitmqctl list_permissions (check)
+
+Step 5. Instal dan konfigurasi Memcached (teknologi caching memori) (VM controller)
+    sudo apt-get install memcached python-memcache
+    
+    Edit /etc/memcache.conf :
+    sudo vim /etc/memcached.conf
+    -l 127.0.0.1 menjadi -l 0.0.0.0
+
+    Enable dan Restart :
+    sudo systemctl enable memcached
+    sudo systemctl restart memcached
+    
+Step 6. Instal dan konfigurasi Etcd (distribusi key locking, menyimpan konfigurasi, menjaga jalur layanan/alat komunikasi antar instance)
+(VM controller)
+    sudo apt-get install etcd
+    sudo vim /etc/default/etcd
+        ETCD_NAME="controller"
+        ETCD_DATA_DIR="/var/lib/etcd"
+        ETCD_INITIAL_CLUSTER_STATE="new"
+        ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster-01"
+        ETCD_INITIAL_CLUSTER="controller=http://10.0.0.11:2380"
+        ETCD_INITIAL_ADVERTISE_PEER_URLS="http://10.0.0.11:2380"
+        ETCD_ADVERTISE_CLIENT_URLS="http://10.0.0.11:2379"
+        ETCD_LISTEN_PEER_URLS="http://0.0.0.0:2380"
+        ETCD_LISTEN_CLIENT_URLS="http://10.0.0.11:2379"
+
+    Enable dan Start :
+    sudo systemctl enable etcd
+    sudo systemctl start etcd

@@ -1,0 +1,100 @@
+Lab 5. Install Konfigurasi Glance (Menejemen Image Service) (controller)
+
+1. Membuat Database Glance :
+-->> sudo su
+-->> mysql
+-->> CREATE DATABASE glance;
+-->> GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'localhost' IDENTIFIED BY 'glanceDBPass';
+-->> GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'%' IDENTIFIED BY 'glanceDBPass';
+-->> exit
+
+2. Membuat Glance User
+-->> source admin-openrc
+-->> openstack user create --domain default --password-prompt glance
+-->> Masukkan Password yang diinginkan (glancePass)
+
+3. Menambahkan admin role ke glance user
+-->> openstack role add --project service --user glance admin
+-->> openstack service create --name glance --description "IbnMahar Openstack Image" image
+
+4. Membuat service glance
+-->> openstack service create --name glance --description "IbnMahar Openstack Image" image
+-->> openstack service list (cek list service)
+
+5. Membuat endpoint public, internal, dan admin
+-->> openstack endpoint create --region RegionOne image public http://controller:9292
+-->> openstack endpoint create --region RegionOne image internal http://controller:9292
+-->> openstack endpoint create --region RegionOne image admin http://controller:9292
+-->> openstack endpoint list (cek list endpoint)
+
+6. Install glance
+-->> apt-get install glance
+
+7. Edit file glance-api.conf
+-->> vim /etc/glance/glance-api.conf
+-> [database]
+    check connection dan buat connection baru yaitu "connection =     mysql+pymysql://glance:glanceDBPass@controller/glance"
+-> [keystone_authtoken]
+   - tambahkan di bawah www._authenticate_uri = <None>
+    "www_authenticate_uri = http://controller:5000"
+   - tambahkan di bawah auth_uri = <None>
+    "auth_url = http://controller:5000"
+-> memcached_servers = <None>
+    tambahkan di bawahnya "memcached_servers = controller:11211"
+-> auth_type = <None>
+    tambahkan di bawahnya :
+    auth_type = password
+    project_domain_name = Default
+    user_domain_name = Default
+    project_name = service
+    username = glance
+    password = glancePass
+-> [paste_deploy]
+    uncheck flavor = keystone
+-> [glance_store]
+    uncheck stores = file,http
+    uncheck default_store = file
+-> uncheck filesystem_store_datadir = /var/lib/glance/images
+
+8. Edit file glance-registry.conf
+-->> vim /etc/glance/glance-registry.conf
+-> [database]
+    check connection dan buat connection baru yaitu "connection =     mysql+pymysql://glance:glanceDBPass@controller/glance"
+-->> [keystone_authtoken]
+    tambahkan di bawah www._authenticate_uri = <None> :
+    www_authenticate_uri = http://controller:5000
+    auth_url = http://controller:5000
+    memcached_servers = controller:11211
+    auth_type = password
+    project_domain_name = Default
+    user_domain_name = Default
+    project_name = service
+    username = glance
+    password = glancePass
+-> [paste_deploy]
+    uncheck flavor = keystone
+
+9. Membuat tabel pada database glance
+-->> su -s /bin/sh -c "glance-manage db_sync" glance
+-> Cek tabel :
+    -->> mysql -uglance -p -h controller
+        Masukkan Password database glance ("glanceDBPass")
+    -->> use glance;
+    -->> show tables;
+
+10. Restart service glance
+-->> service glance-registry restart
+-->> systemctl enable glance-registry
+-->> service glance-api restart
+-->> systemctl enable glance-api
+
+11. Download CirrOS
+-->> exit
+-->> source admin-openrc
+-->> wget http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img
+
+12. Upload image ke database
+-->> openstack image create "cirros" --file cirros-0.4.0-x86_64-disk.img --disk-format qcow2 --container-format bare --public
+-->> openstack image list (Cek list image)
+
+13. Cek image lewat dashboard di browser

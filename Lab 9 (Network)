@@ -1,0 +1,254 @@
+Lab 9. Konfigurasi Neutron
+
+(controller node)
+1. Membuat Database Neutron
+-->> sudo su
+-->> mysql
+-> CREATE DATABASE neutron;
+-> GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' \
+   > IDENTIFIED BY 'neutronDBPass';
+-> GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' \
+   > IDENTIFIED BY 'neutronDBPass';
+-> exit
+
+2. Memberikan akses ke CLI khusus admin
+-->> exit
+-->> source admin-openrc
+
+3. Membuat service kredensial (user, admin role, service)
+User :
+-->> openstack user create --domain default --password-prompt neutron
+*Password : neutronPass
+
+Admin role :
+-->> openstack role add --project service --user neutron admin
+
+Service :
+-->> openstack service create --name neutron \
+     > --description "OpenStack Networking" network
+
+4. Membuat networking service API endpoints 
+-->> openstack endpoint create --region RegionOne \
+     > network public http://controller:9696
+-->> openstack endpoint create --region RegionOne \
+     > network internal http://controller:9696
+-->> openstack endpoint create --region RegionOne \
+     > network admin http://controller:9696
+
+5. Konfigurasi networking option dengan Self-service networks
+-->> sudo su
+Instal komponen-komponen :
+-->> apt install neutron-server neutron-plugin-ml2 \
+     > neutron-linuxbridge-agent neutron-l3-agent neutron-dhcp-agent \
+     > neutron-metadata-agent
+
+======================================================================
+Edit neutron.conf :
+-->> vim /etc/neutron/neutron.conf
+-> [database]
+sesuaikan :
+connection = mysql+pymysql://neutron:neutronDBPass@controller/neutron
+
+-> [DEFAULT]
+sesuaikan :
+core_plugin = ml2
+service_plugins = router
+allow_overlapping_ips = true
+transport_url = rabbit://openstack:openstack@controller
+auth_strategy = keystone
+notify_nova_on_port_status_changes = true
+notify_nova_on_port_data_changes = true
+
+-> [keystone_authtoken]
+sesuaikan :
+auth_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = neutronPass
+
+-> [nova]
+sesuaikan :
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = nova
+password = novaPass
+
+-> [oslo_concurrency]
+sesuaikan :
+lock_path = /var/lib/neutron/tmp
+
+======================================================================
+Edit ml2_conf.ini(Modular Layer 2 plug-in) :
+-->> vim /etc/neutron/plugins/ml2/ml2_conf.ini
+-> [ml2]
+sesuaikan :
+type_drivers = flat,vlan,vxlan
+tenant_network_types = vxlan
+mechanism_drivers = linuxbridge,l2population
+extension_drivers = port_security
+
+-> [ml2_type_flat]
+sesuaikan :
+flat_networks = provider
+
+-> [ml2_type_vxlan]
+sesuaikan :
+vni_ranges = 1:1000
+
+-> [securitygroup]
+sesuaikan :
+enable_ipset = true
+
+======================================================================
+Edit linuxbridge_agent.ini :
+-->> vim /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+-> [linux_bridge]
+sesuaikan :
+physical_interface_mappings = provider:enp0s9
+
+-> [vxlan]
+sesuaikan :
+enable_vxlan = true
+local_ip = 10.0.0.11
+l2_population = true
+
+-> [securitygroup]
+sesuaikan :
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+
+======================================================================
+Edit l3_agent.ini(Layer-3 agent) :
+-->> vim /etc/neutron/l3_agent.ini
+-> [DEFAULT]
+sesuaikan :
+interface_driver = linuxbridge
+
+======================================================================
+Edit dhcp_agent.ini :
+-->> vim /etc/neutron/dhcp_agent.ini
+-> [DEFAULT]
+sesuaikan :
+interface_driver = linuxbridge
+dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq
+enable_isolated_metadata = true
+
+6. Konfigurasi Metadata agent
+-->> vim /etc/neutron/metadata_agent.ini
+-> [DEFAULT]
+sesuaikan :
+nova_metadata_host = controller
+metadata_proxy_shared_secret = metadataSecret
+
+7. Konfigurasi Compute service untuk menggunakan Networking service.
+-->> vim /etc/nova/nova.conf
+-> [neutron]
+sesuaikan :
+url = http://controller:9696
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = neutronPass
+service_metadata_proxy = true
+metadata_proxy_shared_secret = metadataSecret
+
+8. Populate database
+-->> su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf \
+     > --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
+
+9. Restart Compute API Service, Networking Service, Layer-3 Service
+-->> service nova-api restart
+-->> service neutron-server restart
+-->> service neutron-linuxbridge-agent restart
+-->> service neutron-dhcp-agent restart
+-->> service neutron-metadata-agent restart
+-->> service neutron-l3-agent restart
+
+
+(compute node)
+1.Instal komponen-komponen
+-->> sudo su
+-->> apt install neutron-linuxbridge-agent
+
+2. Edit neutron.conf :
+-->> vim /etc/neutron/neutron.conf
+-> [database]
+uncheck connection, karena compute node mengakses database secara tidak langsung
+
+-> [DEFAULT]
+sesuaikan :
+transport_url = rabbit://openstack:openstack@controller
+auth_strategy = keystone
+
+-> [keystone_authtoken]
+sesuaikan :
+auth_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = neutronPass
+
+-> [oslo_concurrency]
+sesuaikan :
+lock_path = /var/lib/neutron/tmp
+
+3. Konfigurasi Network Option Self-service network 
+Edit linuxbridge_agent.ini :
+-->> vim /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+-> [linux_bridge]
+sesuaikan :
+physical_interface_mappings = provider:enp0s9
+
+-> [vxlan]
+sesuaikan :
+enable_vxlan = true
+local_ip = 10.0.0.31
+l2_population = true
+
+-> [securitygroup]
+sesuaikan :
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+
+4. Edit nova.conf :
+-->> vim /etc/nova/nova.conf
+-> [neutron]
+sesuaikan :
+url = http://controller:9696
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = neutronPass
+
+5.Restart compute service, linux bridge agent
+-->> service nova-compute restart
+-->> service neutron-linuxbridge-agent restart
+
+VERIFIKASI : (controller node)
+-->> exit
+-->> source admin-openrc
+-->> openstack extension list --network
+-->> openstack network agent list
+
++ Cek Dashboard 

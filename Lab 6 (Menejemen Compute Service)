@@ -1,0 +1,114 @@
+Lab 6. Instal dan Konfigurasi Nova (controller)
+
+1. sudo su
+2. Membuat database Nova
+-->> mysql
+-> CREATE DATABASE nova_api;
+-> CREATE DATABASE nova;
+-> CREATE DATABASE nova_cell0;
+-> CREATE DATABASE placement;
+-> GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'localhost' IDENTIFIED BY 'novaDBPass';
+-> GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'%' IDENTIFIED BY 'novaDBPass';
+-> GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' IDENTIFIED BY 'novaDBPass';
+-> GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'%' IDENTIFIED BY 'novaDBPass';
+-> GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'localhost' IDENTIFIED BY 'novaDBPass';
+-> GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'%' IDENTIFIED BY 'novaDBPass';
+-> GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'localhost' IDENTIFIED BY 'placementDBPass';
+-> GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'%' IDENTIFIED BY 'placementDBPass';
+-> exit
+
+3. Membuat openstack nova user, role, service dan 3 endpoint
+-->> exit 
+-->> source admin-openrc
+USER :
+-->> openstack user create --domain default --password-prompt nova
+-> Masukkan Password (novaPass)
+ROLE :
+-->> openstack role add --project service --user nova admin
+SERVICE :
+-->> openstack service create --name nova --description "Ibn Mahar Openstack Compute" compute
+ENDPOINT :
+-->> openstack endpoint create --region RegionOne compute public http://controller:8774/v2.1
+-->> openstack endpoint create --region RegionOne compute internal http://controller:8774/v2.1
+-->> openstack endpoint create --region RegionOne compute admin http://controller:8774/v2.1
+
+4. Membuat openstack placement user, role, service dan 3 endpoint
+USER :
+-->> openstack user create --domain default --password-prompt placement
+-> Masukkan Password (placementPass)
+ROLE :
+-->> openstack role add --project service --user placement admin
+SERVICE :
+-->> openstack service create --name placement --description "Placement API" placement
+ENDPOINT  :
+-->> openstack endpoint create --region RegionOne placement public http://controller:8774/v2.1
+-->> openstack endpoint create --region RegionOne placement internal http://controller:8774/v2.1
+-->> openstack endpoint create --region RegionOne placement admin http://controller:8774/v2.1
+
+5. Instal nova api, nova conductor, nova novncproxy, nova scheduler, dan nova placement api
+-->> apt-get install nova-api nova-conductor nova-novncproxy nova-scheduler nova-placement-api
+
+6. Edit file nova.conf
+-->> vim /etc/nova/nova.conf
+-> [database]
+    connection = mysql+pymysql://nova:novaDBPass@controller/nova
+-> [api_database]
+    connection = mysql+pymysql://nova:novaDBPass@controller/nova_api
+-> [placement_database]
+    connection = mysql+pymysql://placement:placementDBPass@controller/placement
+-> [DEFAULT]
+    transport_url = rabbit://openstack:openstack@controller
+    my_ip = 10.0.0.11
+    use_neutron = true
+    firewall_driver = nova.virt.firewall.NoopFirewallDriver
+-> [api]
+    auth_strategy = keystone
+-> [keystone_authtoken]
+    tambahkan di bawah www_authenticate_uri =<None> :
+    auth_url = http://controller:5000/v3
+    memcached_servers = controller:11211
+    auth_type = password
+    project_domain_name = default
+    user_domain_name = default
+    project_name = service
+    username = nova
+    password = novaPass
+-> [vnc]
+    tambahkan di bawah enabled = true :
+    enabled = true
+    server_listen = $my_ip
+    server_proxyclient_address = $my_ip
+-> [glance]
+    api_servers = http://controller:9292
+-> [oslo_concurrency]
+    lock_path = /var/lib/nova/tmp
+-> [placement]
+    tambahkan di bawah os_region_name = openstack :
+    region_name = RegionOne
+    project_domain_name = Default
+    project_name = service
+    auth_type = password
+    user_domain_name = Default
+    auth_url = http://controller:5000/v3
+    username = placement
+    password = placementPass
+-> :wq
+
+7. su -s /bin/sh -c "nova-manage api_db sync" nova
+   *Cek Tabel : mysql -> use nova; -> show tables;nova
+   su -s /bin/sh -c "nova-manage cell_v2 map_cell0" nova
+   su -s /bin/sh -c "nova-manage cell_v2 create_cell --name=cell1 --verbose" nova
+   su -s /bin/sh -c "nova-manage db sync" nova
+   su -s /bin/sh -c "nova-manage cell_v2 list_cells" nova
+
+8. Restart service nova api, nova scheduler, nova conductor, dan nova novncproxy
+-->> service nova-api restart
+-->> service nova-scheduler restart
+-->> service nova-conductor restart
+-->> service nova-novncproxy restart
+-->> systemctl enable nova-api
+-->> systemctl enable nova-scheduler
+-->> systemctl enable nova-conductor
+-->> systemctl enable nova-novncproxy
+
+9. Cek dashboard
